@@ -9,3 +9,9 @@ Running log of prompt-driven changes and local commits.
   - README.md
   - logs/chat_history.md
   - scripts/prompt_commit.sh
+
+## 2026-04-08 06:11:22 CDT
+- Prompt: I think we lost the progress bar when downloading resources.  Can we get those back please?
+- Branch: master
+- Files:
+  - bootstrap_assets.py

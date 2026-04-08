@@ -12,6 +12,7 @@ import urllib.request
 from pathlib import Path
 
 from huggingface_hub import hf_hub_download, snapshot_download
+from tqdm import tqdm
 
 OFFICIAL_REPO_URL = "https://github.com/Lightricks/LTX-2.git"
 OFFICIAL_REPO_DIR = Path("external/LTX-2")
@@ -87,17 +88,30 @@ def _stream_download_with_resume(url: str, destination: Path, *, attempts: int =
                 if status_code not in (200, 206):
                     raise RuntimeError(f"Unexpected HTTP status {status_code} from {url}")
 
-                total_bytes = start_byte
+                content_length = response.headers.get("Content-Length")
+                total_expected: int | None = None
+                if content_length and content_length.isdigit():
+                    current_payload = int(content_length)
+                    total_expected = (
+                        start_byte + current_payload if status_code == 206 else current_payload
+                    )
+
                 with partial_path.open(mode) as output:
-                    while True:
-                        chunk = response.read(DOWNLOAD_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        output.write(chunk)
-                        total_bytes += len(chunk)
-                        if total_bytes % (1024 * 1024 * 1024) < DOWNLOAD_CHUNK_SIZE:
-                            gib = total_bytes / (1024**3)
-                            print(f"  downloaded {gib:.2f} GiB -> {partial_path.name}")
+                    with tqdm(
+                        total=total_expected,
+                        initial=start_byte,
+                        unit="B",
+                        unit_scale=True,
+                        unit_divisor=1024,
+                        desc=destination.name,
+                        dynamic_ncols=True,
+                    ) as progress:
+                        while True:
+                            chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            output.write(chunk)
+                            progress.update(len(chunk))
                 partial_path.replace(destination)
                 print(f"Downloaded: {destination}")
                 return
