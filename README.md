@@ -131,3 +131,23 @@ Notes:
 - Intel `xpu` execution requires Intel GPU drivers and the XPU wheel build of PyTorch. On this machine, the hardware is present, but `torch.xpu.is_available()` was still `False` in the current environment before switching wheels, which usually means the Intel GPU runtime or driver stack still needs to be installed or activated.
 - We intentionally moved away from the unofficial converted Diffusers snapshot because it was missing required model weights for `connectors` and `vae`. The current path uses the official Lightricks repository instead.
 - `generate_ltx23_video.py` is now local-only. It does not clone repos or download model assets during execution. All networked setup belongs in `init.sh`.
+
+## Prompt Commit Workflow
+
+This repository includes a prompt-driven commit helper and a running chat log:
+
+- script: `scripts/prompt_commit.sh`
+- log file: `logs/chat_history.md`
+- git alias: `git prompt-commit`
+
+After making code changes, run:
+
+```bash
+git prompt-commit "your prompt text"
+```
+
+Behavior:
+
+- stages all current changes
+- appends timestamp, prompt, branch, and changed files to `logs/chat_history.md`
+- creates a local commit using the exact prompt text as the commit message
