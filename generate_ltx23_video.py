@@ -86,6 +86,7 @@ def validate_runtime_dependencies() -> None:
 
 
 def validate_local_assets() -> tuple[Path, Path, Path, Path]:
+    gemma_model_files = list(GEMMA_DIR.rglob("model*.safetensors"))
     required_paths = [
         OFFICIAL_REPO_DIR / "packages" / "ltx-core" / "src",
         OFFICIAL_REPO_DIR / "packages" / "ltx-pipelines" / "src",
@@ -97,6 +98,8 @@ def validate_local_assets() -> tuple[Path, Path, Path, Path]:
     ]
 
     missing = [path for path in required_paths if not path.exists()]
+    if not gemma_model_files:
+        missing.append(GEMMA_DIR / "model*.safetensors")
     if not missing:
         return (
             OFFICIAL_MODELS_DIR / DEV_CHECKPOINT_NAME,

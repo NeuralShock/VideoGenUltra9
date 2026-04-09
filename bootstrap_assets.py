@@ -18,7 +18,7 @@ from tqdm import tqdm
 OFFICIAL_REPO_URL = "https://github.com/Lightricks/LTX-2.git"
 OFFICIAL_REPO_DIR = Path("external/LTX-2")
 MODEL_REPO_ID = "Lightricks/LTX-2.3"
-GEMMA_REPO_ID = "google/gemma-3-12b-it-qat-q4_0-unquantized"
+DEFAULT_GEMMA_REPO_ID = "google/gemma-3-12b-it-qat-q4_0-unquantized"
 OFFICIAL_MODELS_DIR = Path("models/official/ltx-2.3")
 GEMMA_DIR = Path("models/official/gemma-3-12b-it-qat-q4_0-unquantized")
 DEV_CHECKPOINT_NAME = "ltx-2.3-22b-dev.safetensors"
@@ -27,6 +27,12 @@ SPATIAL_UPSCALER_NAME = "ltx-2.3-spatial-upscaler-x2-1.0.safetensors"
 DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 DOWNLOAD_ATTEMPTS_PER_SOURCE = 3
 DOWNLOAD_STALL_TIMEOUT_SECONDS = int(os.environ.get("LTX23_DOWNLOAD_STALL_TIMEOUT_SECONDS", "25"))
+GEMMA_ALLOW_PATTERNS = [
+    "*.json",
+    "*.model",
+    "*.jinja",
+    "*.safetensors",
+]
 
 
 def run(cmd: list[str]) -> None:
@@ -64,6 +70,19 @@ def _auth_headers() -> dict[str, str]:
     if not token:
         return {}
     return {"Authorization": f"Bearer {token}"}
+
+
+def _gemma_repo_candidates() -> list[str]:
+    ids = _comma_split_env("LTX23_GEMMA_REPO_IDS")
+    return ids if ids else [DEFAULT_GEMMA_REPO_ID]
+
+
+def _gemma_assets_present(gemma_dir: Path) -> bool:
+    required_files = [
+        gemma_dir / "tokenizer.model",
+        gemma_dir / "preprocessor_config.json",
+    ]
+    return all(path.exists() for path in required_files) and any(gemma_dir.rglob("model*.safetensors"))
 
 
 def _is_stall_error(exc: BaseException) -> bool:
@@ -139,6 +158,52 @@ def _stream_download_with_resume(url: str, destination: Path, *, attempts: int =
             time.sleep(delay)
 
 
+def ensure_gemma_assets() -> None:
+    if _gemma_assets_present(GEMMA_DIR):
+        print(f"Gemma assets already present: {GEMMA_DIR}")
+        return
+
+    local_gemma_dir = os.environ.get("LTX23_GEMMA_LOCAL_DIR", "").strip()
+    if local_gemma_dir:
+        source = Path(local_gemma_dir).expanduser()
+        if source.exists():
+            print(f"Using local Gemma source: {source}")
+            run(["cp", "-a", f"{source}/.", str(GEMMA_DIR)])
+            if _gemma_assets_present(GEMMA_DIR):
+                print(f"Gemma assets copied from local source: {GEMMA_DIR}")
+                return
+            print("Local Gemma source copy completed but required files are still missing.")
+        else:
+            print(f"Configured local Gemma source does not exist: {source}")
+
+    errors: list[str] = []
+    for repo_id in _gemma_repo_candidates():
+        try:
+            print(f"Trying Gemma repo: {repo_id}")
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=str(GEMMA_DIR),
+                allow_patterns=GEMMA_ALLOW_PATTERNS,
+            )
+            if _gemma_assets_present(GEMMA_DIR):
+                print(f"Gemma assets ready from repo: {repo_id}")
+                return
+            errors.append(f"- {repo_id}: download finished but required files were not found")
+        except Exception as exc:
+            errors.append(f"- {repo_id}: {exc}")
+            print(f"Gemma source failed: {exc}")
+
+    detail_block = "\n".join(errors) if errors else "- (no Gemma repositories configured)"
+    raise RuntimeError(
+        "Unable to prepare Gemma assets.\n"
+        f"Tried these sources:\n{detail_block}\n\n"
+        "Alternatives:\n"
+        "1) Request/accept access for the Gemma repo on Hugging Face and set HF_TOKEN.\n"
+        "2) Provide one or more alternate repository ids via LTX23_GEMMA_REPO_IDS.\n"
+        "3) Point LTX23_GEMMA_LOCAL_DIR to a local directory containing Gemma files."
+    )
+
+
 def download_with_fallbacks(repo_id: str, filename: str, destination_dir: Path, env_key: str) -> Path:
     destination = destination_dir / filename
     if destination.exists():
@@ -211,22 +276,7 @@ def ensure_model_assets() -> None:
             local_dir=str(OFFICIAL_MODELS_DIR),
         )
 
-    required_gemma_files = [
-        GEMMA_DIR / "tokenizer.model",
-        GEMMA_DIR / "preprocessor_config.json",
-    ]
-    if all(path.exists() for path in required_gemma_files):
-        print(f"Gemma assets already present: {GEMMA_DIR}")
-    else:
-        snapshot_download(
-            repo_id=GEMMA_REPO_ID,
-            local_dir=str(GEMMA_DIR),
-            allow_patterns=[
-                "*.json",
-                "*.model",
-                "*.jinja",
-            ],
-        )
+    ensure_gemma_assets()
 
 
 def main() -> None:

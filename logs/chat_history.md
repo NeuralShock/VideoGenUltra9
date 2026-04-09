@@ -21,3 +21,10 @@ Running log of prompt-driven changes and local commits.
 - Branch: master
 - Files:
   - bootstrap_assets.py
+
+## 2026-04-09 15:18:40 CDT
+- Prompt: Access to gemma is restricted (See terminal output or I can copy) is there an alternative?
+- Branch: master
+- Files:
+  - bootstrap_assets.py
+  - generate_ltx23_video.py
