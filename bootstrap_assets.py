@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ DISTILLED_LORA_NAME = "ltx-2.3-22b-distilled-lora-384.safetensors"
 SPATIAL_UPSCALER_NAME = "ltx-2.3-spatial-upscaler-x2-1.0.safetensors"
 DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 DOWNLOAD_ATTEMPTS_PER_SOURCE = 3
+DOWNLOAD_STALL_TIMEOUT_SECONDS = int(os.environ.get("LTX23_DOWNLOAD_STALL_TIMEOUT_SECONDS", "25"))
 
 
 def run(cmd: list[str]) -> None:
@@ -64,6 +66,15 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _is_stall_error(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(exc, urllib.error.URLError):
+        reason = exc.reason
+        return isinstance(reason, (TimeoutError, socket.timeout))
+    return False
+
+
 def _stream_download_with_resume(url: str, destination: Path, *, attempts: int = DOWNLOAD_ATTEMPTS_PER_SOURCE) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial_path = destination.with_name(f"{destination.name}.partial")
@@ -78,7 +89,7 @@ def _stream_download_with_resume(url: str, destination: Path, *, attempts: int =
         request = urllib.request.Request(url, headers=request_headers)
         mode = "ab" if start_byte > 0 else "wb"
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with urllib.request.urlopen(request, timeout=DOWNLOAD_STALL_TIMEOUT_SECONDS) as response:
                 status_code = getattr(response, "status", None)
                 if status_code == 200 and start_byte > 0:
                     # Source did not honor the range request; start from scratch.
@@ -116,6 +127,11 @@ def _stream_download_with_resume(url: str, destination: Path, *, attempts: int =
                 print(f"Downloaded: {destination}")
                 return
         except (urllib.error.URLError, TimeoutError, OSError, RuntimeError) as exc:
+            if _is_stall_error(exc):
+                print(
+                    f"Detected stalled download (no data for ~{DOWNLOAD_STALL_TIMEOUT_SECONDS}s). "
+                    "Restarting from partial file..."
+                )
             if attempt == attempts:
                 raise RuntimeError(f"Failed downloading from {url}: {exc}") from exc
             delay = min(2**attempt, 20)

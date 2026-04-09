@@ -15,3 +15,9 @@ Running log of prompt-driven changes and local commits.
 - Branch: master
 - Files:
   - bootstrap_assets.py
+
+## 2026-04-09 05:35:01 CDT
+- Prompt: For the downloads in bootstrap_assets, is there a stall->restart download detection type cycle.  It's unclear if some of these downloads are not breaking.
+- Branch: master
+- Files:
+  - bootstrap_assets.py
